@@ -26,50 +26,40 @@
 
 ## 設計からの逸脱（実装計画で修正した点）
 
-1. **復元点をコミットではなくアーカイブにする。** 設計 第12節は素のサンプルを 1 コミットするとしていたが、そのコミットには `cactus.glb` が含まれ、公開時に検証不能ライセンスのアセットが公開履歴へ永久に載る。第10節の除外方針と矛盾するため、復元点はリポジトリ外の zip とし、**最初のコミットを最初からクリーンにする**。
+1. **復元点は既に存在するため、新たに作成しない。** 設計 第12節は「コミットが 1 つも無い」ことを前提に、素のサンプルを 1 コミットして復元点を作るとしていたが、**この前提は事実ではなかった**。計画作成時点で `0d87a0c "first commit"`（2026-09-08 01:21、SilentNyah 作）が既に存在し、`origin/main`（`https://github.com/SilentNyah/8thWallLearning.git`、public）へ push 済みである。このコミットが素のサンプル全体を含んでおり、設計が求めた復元点そのものとして機能する。
+
+   **付随する決定:** `src/assets/cactus.glb` は `0d87a0c` に含まれるため、**既に公開履歴に載っている**。履歴の書き換えは行わない（利用者判断で確定済み）。理由は、同じファイルを 8th Wall 自身が MIT ライセンスの公開サンプルリポジトリで配布しており当方が露出源ではないこと、push 済みリポジトリを書き換えても GitHub 側の到達不能オブジェクトと LFS ストレージからの完全削除は保証されないこと、force-push が既存クローンを壊す破壊的操作であることの 3 点による。**作業ツリーからは除外し、以降のレッスンで一切使用しない。**
 2. **webpack のマルチエントリ化を R2 へ繰り延べる。** 設計 第12節はステップ 5 に置いていたが、R1 のレッスンは全て `mode: static` であり、bundled レッスンがゼロの状態でマルチエントリ機構を作っても検証できない。R1 は `scripts/build.mjs` による静的ビルドのみとし、R2 で同じ `manifest.json` を webpack から読ませる形に拡張する。**作ったものは捨てない。**
 3. **QR コード生成を R5 へ繰り延べる。** 設計 第10節の「QR をビルド時に生成」は公開導線（L13）の要件であり、R1 の読者は Chrome のポートフォワーディング経由で `localhost` を開くため QR を必要としない。R1 では `8th.io` を使わないことで制約は満たされる。
 
 ---
 
-### Task 1: 復元点の作成、リポジトリ衛生の修正、クリーンな初回コミット
+### Task 1: リポジトリ衛生の修正と LFS 追跡パスの更新
 
 **Files:**
-- Create: `<scratchpad>/8thwall-pristine-backup.zip`（リポジトリ外）
 - Modify: `.gitattributes`
 - Modify: `package.json`
-- Delete: `dev/null/`（Git LFS フックの複製。正規のフックは `.git/hooks/` に存在する）
-- Delete: `src/assets/cactus.glb`、`src/assets/preview.gif`、`src/assets/sand.jpg`（作業ツリーから）
+- Delete: `dev/null/`（Git LFS フックの複製。正規のフックは `.git/hooks/` に存在することを確認済み）
+- Delete: `src/assets/cactus.glb`、`src/assets/preview.gif`、`src/assets/sand.jpg`（作業ツリーから。**履歴からは削除しない**）
 
 **Interfaces:**
-- Consumes: なし（最初のタスク）
-- Produces: クリーンな初回コミット。以降の全タスクはこのコミットを基点とする。
+- Consumes: 既存コミット `0d87a0c`（素のサンプル全体を含む復元点。push 済み）
+- Produces: 以降の全タスクの基点となるクリーンな作業ツリー
 
 - [ ] **Step 1: Node のバージョンを確認する**
 
 Run: `node --version`
 Expected: `v20.0.0` 以上。下回る場合はここで停止し、Node を更新してから再開する（`node --test` が必要）。
 
-- [ ] **Step 2: 素のツリーをリポジトリ外へ退避する（復元点）**
+- [ ] **Step 2: 復元点が存在することを確認する**
 
-PowerShell:
-```powershell
-$dest = "$env:TEMP\8thwall-pristine-backup.zip"
-Compress-Archive -Path "src","config","external",".gitattributes","README.md","package.json","tsconfig.json","LICENSE" -DestinationPath $dest -Force
-Test-Path $dest
+Run:
+```bash
+git show --stat --oneline 0d87a0c | grep -E "cactus\.glb|app\.js|tap-place\.js"
 ```
-Expected: `True`。パスを控えておく。これが唯一の復元点であり、以降の削除操作はこれを前提とする。
+Expected: 3 件とも出力される。`0d87a0c` が素のサンプルを含む復元点であり、**これ以上の退避は不要である**。出力されない場合はここで停止し、削除に進んではならない。
 
-- [ ] **Step 3: 退避内容を検証する**
-
-PowerShell:
-```powershell
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::OpenRead("$env:TEMP\8thwall-pristine-backup.zip").Entries.FullName | Select-String "cactus.glb|app.js|tap-place.js"
-```
-Expected: `src/assets/cactus.glb`、`src/app.js`、`src/tap-place.js` の 3 件が出力される。出力されない場合は Step 2 をやり直す（この確認を飛ばして削除に進んではならない）。
-
-- [ ] **Step 4: `.gitattributes` を新構成へ書き換える**
+- [ ] **Step 3: `.gitattributes` を新構成へ書き換える**
 
 `.gitattributes` の内容を次の通りに置き換える。
 
@@ -85,21 +75,22 @@ lessons/*/assets/** filter=lfs diff=lfs merge=lfs -text
 external/** filter=lfs diff=lfs merge=lfs -text
 ```
 
-このリポジトリにはコミットが 1 つも無いため、LFS 追跡パスを無痛で変更できるのは**この時点だけ**である。
+旧設定で LFS 追跡されていたファイル（`src/assets/**`）は Step 4 で全て削除するため、`git add --renormalize` による再正規化は不要である。削除後に LFS 追跡が残るのは `external/scripts/8frame-1.5.0.min.js` のみで、これは `external/**` パターンが新旧どちらにも存在するため影響を受けない。
 
-- [ ] **Step 5: ゴミと検証不能アセットを削除する**
+- [ ] **Step 4: ゴミと検証不能アセットを削除する**
 
-PowerShell:
-```powershell
-Remove-Item -Recurse -Force "dev"
-Remove-Item -Force "src\assets\cactus.glb","src\assets\preview.gif","src\assets\sand.jpg"
-Get-ChildItem -Recurse -File src | Select-Object FullName
+これらは `0d87a0c` で追跡済みのため、`git rm` を使う（作業ツリーからのみ消す `Remove-Item` では追跡が残る）。
+
+```bash
+git rm -r --quiet dev
+git rm --quiet src/assets/cactus.glb src/assets/preview.gif src/assets/sand.jpg
+git status --short
 ```
-Expected: `src\app.js`、`src\index.css`、`src\index.html`、`src\tap-place.js` の 4 件のみが残る。
+Expected: 4 パスが `D`（削除）として並ぶこと。`src/` には `app.js`、`index.css`、`index.html`、`tap-place.js` の 4 件が残る。
 
-`dev/null/` は Git LFS フックの複製であり、正規のフックは `.git/hooks/` に存在することを確認済みである。アセット 3 件は出典ライセンスを検証できないため公開リポジトリに置かない（`cactus.glb` の Sketchfab 出典は削除済み）。
+`dev/null/` は Git LFS フックの複製であり、正規のフックが `.git/hooks/` に存在することを確認済みである。アセット 3 件は出典ライセンスを検証できないため今後使用しない（`cactus.glb` の Sketchfab 出典は削除済み）。**履歴からの除去は行わない**（冒頭の「設計からの逸脱」1 を参照）。
 
-- [ ] **Step 6: `package.json` に Node 要件を追加する**
+- [ ] **Step 5: `package.json` に Node 要件を追加する**
 
 `package.json` の `"private": true,` の直後に次を挿入する。
 
@@ -109,24 +100,30 @@ Expected: `src\app.js`、`src\index.css`、`src\index.html`、`src\tap-place.js`
   },
 ```
 
-- [ ] **Step 7: コミット対象を確認する（バイナリが混入していないこと）**
+- [ ] **Step 6: 追跡中のバイナリが残っていないことを確認する**
 
 Run:
 ```bash
-git add -A && git status --short && git ls-files | grep -E '\.(glb|jpg|jpeg|png|gif)$' ; echo "exit=$?"
+git add -A && git ls-files | grep -E '\.(glb|jpg|jpeg|png|gif)$' ; echo "exit=$?"
 ```
-Expected: `git ls-files` の grep が**何も出力せず** `exit=1` になること。1 件でも出力された場合は Step 5 をやり直す。
+Expected: **何も出力されず** `exit=1` になること。1 件でも出力された場合は Step 4 をやり直す。
 
-- [ ] **Step 8: 初回コミット**
+Run:
+```bash
+git lfs ls-files
+```
+Expected: `external/scripts/8frame-1.5.0.min.js` の 1 件のみ。
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git commit -m "chore: 8th Wall サンプルをコース用にクリーンな状態で取り込む
+git commit -m "chore: リポジトリ衛生の修正と LFS 追跡パスの更新
 
 - .gitattributes の LFS 追跡パスを lessons/ shared/ 構成へ変更
-  （コミットが存在しない今が無痛に変更できる唯一の機会）
 - dev/null/ を削除（Git LFS フックの複製。正規のフックは .git/hooks/ にある）
-- 出典ライセンスを検証できないアセット 3 件を除外
-  （cactus.glb の Sketchfab 出典は削除済みで確認不能）
+- 出典ライセンスを検証できないアセット 3 件を作業ツリーから除外
+  （cactus.glb の Sketchfab 出典は削除済みで確認不能。
+   履歴からの除去は行わない — 判断の根拠は実装計画に記載）
 - Node 20 以上を要求
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
