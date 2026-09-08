@@ -1,0 +1,39 @@
+{
+  "lessons": [
+    {
+      "id": "00-about",
+      "title": "このコースについて",
+      "dir": "lessons/00-about",
+      "mode": "prose",
+      "status": "draft"
+    },
+    {
+      "id": "01-first-ar",
+      "title": "最初の AR",
+      "dir": "lessons/01-first-ar",
+      "mode": "static",
+      "status": "draft"
+    },
+    {
+      "id": "02-coordinates",
+      "title": "座標系とスケール",
+      "dir": "lessons/02-coordinates",
+      "mode": "static",
+      "status": "draft"
+    },
+    {
+      "id": "03-materials-lights",
+      "title": "マテリアルとライト",
+      "dir": "lessons/03-materials-lights",
+      "mode": "static",
+      "status": "draft"
+    },
+    {
+      "id": "04-ecs-components",
+      "title": "ECS と独自コンポーネント",
+      "dir": "lessons/04-ecs-components",
+      "mode": "static",
+      "status": "draft"
+    }
+  ]
+}
