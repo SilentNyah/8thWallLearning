@@ -36,7 +36,9 @@
 
 5. **Task 4 の `CDN_RE` と `LOCAL_LINK_RE` を修正（レビューで実証された欠陥）。** `CDN_RE` はバージョンの直後に `/` を要求していたため、`https://cdn.jsdelivr.net/npm/@8thwall/xrextras@1` のようにパスが続かない URL を**完全に見逃していた**。同一の浮動バージョンが末尾パスの有無だけで検出されたりされなかったりする状態は、本コース唯一の品質保証機構に空いた穴であるため、末尾 `/` の要求を外した。`LOCAL_LINK_RE` は `//example.com`（プロトコル相対）と `/lessons/x`（サイト絶対）をローカルパスとして拾い、実在しない「リンク切れ」を誤報していたため、否定先読みに `/` を追加した。いずれも対応するテストを追加している。
 
-6. **`npm test` のコマンドを `node --test "scripts/**/*.test.mjs"` に変更（レビューで発見した欠陥）。** 当初の `node --test scripts/` は **Node v22 でディレクトリを走査せず**、`scripts` をテストファイルとして実行しようとして失敗する。Task 7 の CI が実行するのはこのコマンドであり、放置すれば CI が恒久的に赤になっていた。素の `node --test` でも動くが、R2 以降で `lessons/` と `dist/` が育つことを踏まえ `scripts/` に限定できるグロブ形式を採った。
+6. **`npm test` のコマンドを引数なしの `node --test` に変更（レビューで発見した欠陥と、その修正時に判明した二次的欠陥）。** 当初の `node --test scripts/` は **Node v22 でディレクトリを走査せず**失敗する。Task 7 の CI が実行するのはこのコマンドであり、放置すれば CI が恒久的に赤になっていた。
+
+   一度はグロブ形式 `node --test "scripts/**/*.test.mjs"` を採ったが、**これも誤りだった**。Node はテストランナーの引数解釈をメジャーバージョン間で変えており、v22 は引数を glob として扱う一方、**v20 は glob を展開しない**。CI は Node 20 で走るため、グロブ形式では今度は CI 側だけが壊れる。引数なしの `node --test` だけが v18 / v20 / v22 で同じ意味を持つ。プラン内の実行手順もすべて `npm test` に統一し、実際のコマンドは `package.json` の 1 箇所だけが持つ形にした。
 
 7. **QR コード生成を R5 へ繰り延べる。** 設計 第10節の「QR をビルド時に生成」は公開導線（L13）の要件であり、R1 の読者は Chrome のポートフォワーディング経由で `localhost` を開くため QR を必要としない。R1 では `8th.io` を使わないことで制約は満たされる。
 
@@ -230,7 +232,7 @@ test('publishedLessons は draft を除外する', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test "scripts/**/*.test.mjs"`
+Run: `npm test`
 Expected: FAIL — `Cannot find module` で `./manifest.mjs` が見つからない。
 
 - [ ] **Step 3: Write minimal implementation**
@@ -311,7 +313,7 @@ export async function loadManifest(root) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test "scripts/**/*.test.mjs"`
+Run: `npm test`
 Expected: PASS — 9 tests pass。
 
 - [ ] **Step 5: manifest.json を作成する**
@@ -463,7 +465,7 @@ test('prose モードは検証フッターを要求しない', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test "scripts/**/*.test.mjs"`
+Run: `npm test`
 Expected: FAIL — `./structure.mjs` が見つからない。
 
 - [ ] **Step 3: Write minimal implementation**
@@ -516,7 +518,7 @@ export function checkFooter(markdown, mode) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test "scripts/**/*.test.mjs"`
+Run: `npm test`
 Expected: PASS — Task 2 の 9 件と合わせて 18 tests pass。
 
 - [ ] **Step 5: Commit**
@@ -640,7 +642,7 @@ test('サイト絶対リンクはローカルリンクとして扱わない', ()
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test "scripts/**/*.test.mjs"`
+Run: `npm test`
 Expected: FAIL — `./content.mjs` が見つからない。
 
 - [ ] **Step 3: Write minimal implementation**
@@ -700,7 +702,7 @@ export function findLocalLinks(markdown) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test "scripts/**/*.test.mjs"`
+Run: `npm test`
 Expected: PASS — 合計 33 tests pass。
 
 - [ ] **Step 5: lint CLI を書く**
@@ -797,7 +799,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
 ```json
   "scripts": {
-    "test": "node --test \"scripts/**/*.test.mjs\"",
+    "test": "node --test",
     "lint": "node scripts/lint.mjs",
     "build": "node scripts/build.mjs",
     "serve": "node scripts/serve.mjs",
@@ -805,7 +807,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   },
 ```
 
-`node --test scripts/` と書いてはならない。**Node v22 はディレクトリ引数を走査せず、`scripts` をテストファイルとして実行しようとして失敗する。** グロブは Node 自身が展開するため、シェルに解釈させないようクォートする。
+**引数は付けない。** Node のテストランナーは引数の解釈をメジャーバージョン間で変えており、パスやグロブを渡すと環境依存になる。
+
+- `node --test scripts/`（ディレクトリ指定）— **Node v22 で失敗する。** v22 は引数を glob パターンとして扱うため、`scripts` にマッチするテストファイルが無く、ディレクトリ自体を実行しようとして落ちる
+- `node --test "scripts/**/*.test.mjs"`（グロブ指定）— **Node v20 で失敗する。** v20 は glob 展開に対応していない
+
+引数なしの `node --test` だけが v18 / v20 / v22 のすべてで同じ意味を持ち、カレントディレクトリ以下のテストファイルを再帰的に探索する。CI は Node 20、著者環境は Node 22 であり、両方で動く形はこれしかない。
 
 - [ ] **Step 7: lint が現状を正しく落とすことを確認する**
 
@@ -885,7 +892,7 @@ test('レッスンが空でも壊れない', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test "scripts/**/*.test.mjs"`
+Run: `npm test`
 Expected: FAIL — `./build.mjs` が見つからない。
 
 - [ ] **Step 3: Write minimal implementation**
@@ -971,7 +978,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test "scripts/**/*.test.mjs"`
+Run: `npm test`
 Expected: PASS — 合計 39 tests pass。
 
 - [ ] **Step 5: ビルドが空の状態で成功することを確認する**
@@ -1059,7 +1066,7 @@ test('未知の拡張子は octet-stream にする', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test "scripts/**/*.test.mjs"`
+Run: `npm test`
 Expected: FAIL — `./serve.mjs` が見つからない。
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1149,7 +1156,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test "scripts/**/*.test.mjs"`
+Run: `npm test`
 Expected: PASS — 合計 47 tests pass。
 
 - [ ] **Step 5: 実際に起動して確認する**
@@ -1172,6 +1179,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ### Task 7: CI と GitHub Pages デプロイ
 
 **Files:**
+- Modify: `package.json`（`test` スクリプトを CI の Node 20 でも動く形にする）
 - Create: `.github/workflows/ci.yml`
 - Create: `.github/workflows/deploy.yml`
 
@@ -1181,7 +1189,19 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 README が謳っていた GitHub Actions の設定は**このリポジトリには存在しない**ため、新規に作成する。
 
-- [ ] **Step 1: CI ワークフローを作成する**
+- [ ] **Step 1: `test` スクリプトを Node 20 でも動く形に直す**
+
+`package.json` の `test` を次のとおり書き換える。
+
+```json
+    "test": "node --test",
+```
+
+**なぜこれが CI の作業に含まれるのか。** 現在の値は `node --test "scripts/**/*.test.mjs"` で、著者環境の Node 22 では動くが **CI が固定する Node 20 では glob が展開されず失敗する**。逆に、それ以前の `node --test scripts/` は Node 20 では動くが Node 22 で失敗する。引数なしの `node --test` だけが両方で同じ意味を持ち、カレントディレクトリ以下を再帰探索する。CI を green にすることがこのタスクの目的である以上、この 1 行はここで直すのが正しい。
+
+他の 4 つのスクリプト（`lint` / `build` / `serve` / `build:webpack`）は変更しない。
+
+- [ ] **Step 2: CI ワークフローを作成する**
 
 Create `.github/workflows/ci.yml`:
 
@@ -1213,7 +1233,7 @@ jobs:
 
 `npm ci` を実行しない点に注意する。R1 のスクリプトは Node 標準モジュールのみで動作し、`node_modules` を必要としない。
 
-- [ ] **Step 2: デプロイワークフローを作成する**
+- [ ] **Step 3: デプロイワークフローを作成する**
 
 Create `.github/workflows/deploy.yml`:
 
@@ -1256,20 +1276,25 @@ jobs:
         uses: actions/deploy-pages@v4
 ```
 
-- [ ] **Step 3: ローカルで CI と同じ手順を通す**
+- [ ] **Step 4: ローカルで CI と同じ手順を通す**
 
 Run: `npm test && npm run lint && npm run build`
 Expected: `npm test` は PASS、`npm run lint` は **exit 1 で FAIL**（レッスンが未作成のため）。
 
 この時点で CI を green にはできない。**これは想定通りであり、Task 9 以降でレッスンを作ると解消する。** CI を通すためだけに lint を緩めてはならない。
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add .github/workflows/ci.yml .github/workflows/deploy.yml
+git add package.json .github/workflows/ci.yml .github/workflows/deploy.yml
 git commit -m "ci: テスト・lint・ビルドと GitHub Pages デプロイを追加
 
 README が言及していた Actions 設定は実在しなかったため新規作成した。
+
+あわせて test スクリプトを引数なしの node --test に変更した。
+Node はテストランナーの引数解釈をメジャーバージョン間で変えており、
+ディレクトリ指定は v22 で、glob 指定は v20 で失敗する。CI は Node 20、
+著者環境は Node 22 のため、両方で動く形は引数なししかない。
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ```
