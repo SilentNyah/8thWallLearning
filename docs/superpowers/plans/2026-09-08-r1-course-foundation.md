@@ -32,7 +32,13 @@
 2. **webpack のマルチエントリ化を R2 へ繰り延べる。** 設計 第12節はステップ 5 に置いていたが、R1 のレッスンは全て `mode: static` であり、bundled レッスンがゼロの状態でマルチエントリ機構を作っても検証できない。R1 は `scripts/build.mjs` による静的ビルドのみとし、R2 で同じ `manifest.json` を webpack から読ませる形に拡張する。**作ったものは捨てない。**
 3. **Task 5 の `build()` は `external/` も `dist/` へコピーする（実行前スキャンで発見した欠陥の修正）。** 当初の Task 5 は公開レッスンと `shared/` しかコピーしていなかったが、全レッスンは 8frame を `../../external/scripts/8frame-1.5.0.min.js` から読み込むため、`dist` 配信時に**全レッスンでスクリプトが 404 になる**。Step 3 のコードに `external/` のコピーを追加し、Step 5 の検証項目にも `dist/external/scripts/8frame-1.5.0.min.js` の存在確認を加えた。
 
-4. **QR コード生成を R5 へ繰り延べる。** 設計 第10節の「QR をビルド時に生成」は公開導線（L13）の要件であり、R1 の読者は Chrome のポートフォワーディング経由で `localhost` を開くため QR を必要としない。R1 では `8th.io` を使わないことで制約は満たされる。
+4. **Task 3 の `checkHeadings` は見出しを正規表現へ埋め込む前にエスケープする（レビューで発見した欠陥の修正）。** 元のコードは `LESSON_HEADINGS` を無加工で `new RegExp` に渡していたため、`設定(オプション)` のようにメタ文字を含む見出しを追加した瞬間に `Invalid regular expression` で関数自体がクラッシュする。リンタが自分の設定で落ちるのは誤判定より悪い失敗であり、修正は 1 行で済むため潰した。
+
+5. **Task 4 の `CDN_RE` と `LOCAL_LINK_RE` を修正（レビューで実証された欠陥）。** `CDN_RE` はバージョンの直後に `/` を要求していたため、`https://cdn.jsdelivr.net/npm/@8thwall/xrextras@1` のようにパスが続かない URL を**完全に見逃していた**。同一の浮動バージョンが末尾パスの有無だけで検出されたりされなかったりする状態は、本コース唯一の品質保証機構に空いた穴であるため、末尾 `/` の要求を外した。`LOCAL_LINK_RE` は `//example.com`（プロトコル相対）と `/lessons/x`（サイト絶対）をローカルパスとして拾い、実在しない「リンク切れ」を誤報していたため、否定先読みに `/` を追加した。いずれも対応するテストを追加している。
+
+6. **`npm test` のコマンドを `node --test "scripts/**/*.test.mjs"` に変更（レビューで発見した欠陥）。** 当初の `node --test scripts/` は **Node v22 でディレクトリを走査せず**、`scripts` をテストファイルとして実行しようとして失敗する。Task 7 の CI が実行するのはこのコマンドであり、放置すれば CI が恒久的に赤になっていた。素の `node --test` でも動くが、R2 以降で `lessons/` と `dist/` が育つことを踏まえ `scripts/` に限定できるグロブ形式を採った。
+
+7. **QR コード生成を R5 へ繰り延べる。** 設計 第10節の「QR をビルド時に生成」は公開導線（L13）の要件であり、R1 の読者は Chrome のポートフォワーディング経由で `localhost` を開くため QR を必要としない。R1 では `8th.io` を使わないことで制約は満たされる。
 
 ---
 
@@ -224,7 +230,7 @@ test('publishedLessons は draft を除外する', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test scripts/`
+Run: `node --test "scripts/**/*.test.mjs"`
 Expected: FAIL — `Cannot find module` で `./manifest.mjs` が見つからない。
 
 - [ ] **Step 3: Write minimal implementation**
@@ -305,7 +311,7 @@ export async function loadManifest(root) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test scripts/`
+Run: `node --test "scripts/**/*.test.mjs"`
 Expected: PASS — 9 tests pass。
 
 - [ ] **Step 5: manifest.json を作成する**
@@ -457,7 +463,7 @@ test('prose モードは検証フッターを要求しない', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test scripts/`
+Run: `node --test "scripts/**/*.test.mjs"`
 Expected: FAIL — `./structure.mjs` が見つからない。
 
 - [ ] **Step 3: Write minimal implementation**
@@ -510,7 +516,7 @@ export function checkFooter(markdown, mode) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test scripts/`
+Run: `node --test "scripts/**/*.test.mjs"`
 Expected: PASS — Task 2 の 9 件と合わせて 18 tests pass。
 
 - [ ] **Step 5: Commit**
@@ -610,11 +616,31 @@ test('外部リンクとアンカーは抽出しない', () => {
 test('相対リンクのアンカー部分を取り除く', () => {
   assert.deepEqual(findLocalLinks('[節へ](./README.md#解説)'), ['./README.md'])
 })
+
+// バージョンの後ろにパスが続かない URL は jsdelivr の正当な短縮形であり、
+// ここを取りこぼすと「浮動バージョン禁止」の保証に穴が空く
+const bareTag = '<script src="https://cdn.jsdelivr.net/npm/@8thwall/xrextras@1"></script>'
+
+test('パス無しの CDN URL からもバージョンを抽出する', () => {
+  assert.deepEqual(findCdnPins(bareTag), [{pkg: '@8thwall/xrextras', version: '1'}])
+})
+
+test('パス無しの浮動バージョンもエラーにする', () => {
+  assert.equal(checkExactVersions(bareTag).length, 1)
+})
+
+test('プロトコル相対リンクはローカルリンクとして扱わない', () => {
+  assert.deepEqual(findLocalLinks('[a](//example.com/script.js)'), [])
+})
+
+test('サイト絶対リンクはローカルリンクとして扱わない', () => {
+  assert.deepEqual(findLocalLinks('[b](/lessons/00-about/README.md)'), [])
+})
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test scripts/`
+Run: `node --test "scripts/**/*.test.mjs"`
 Expected: FAIL — `./content.mjs` が見つからない。
 
 - [ ] **Step 3: Write minimal implementation**
@@ -625,10 +651,15 @@ Create `scripts/checks/content.mjs`:
 // 本文とマークアップの内容チェック。
 // 「バージョンを厳密固定する」という方針を、人間の記憶ではなく機械に守らせる。
 
-const CDN_RE = /https:\/\/cdn\.jsdelivr\.net\/npm\/(@[^@/]+\/[^@/]+|[^@/]+)@([^/"']+)\//g
+// バージョンの後ろにパスが続かない URL（例: .../xrextras@1）も拾う必要がある。
+// 末尾の / を必須にすると、同じ浮動バージョンがパスの有無だけで
+// 検出されたりされなかったりする穴が空く。
+const CDN_RE = /https:\/\/cdn\.jsdelivr\.net\/npm\/(@[^@/]+\/[^@/]+|[^@/]+)@([^/"'\s>]+)/g
 const EXACT_SEMVER = /^\d+\.\d+\.\d+$/
-// 外部スキームとページ内アンカーを除いたマークダウンリンク
-const LOCAL_LINK_RE = /\[[^\]]*\]\((?!https?:|mailto:|#)([^)#\s]+)(?:#[^)\s]*)?\)/g
+// 外部スキームとページ内アンカーを除いたマークダウンリンク。
+// 先頭の / も除外する（//example.com のプロトコル相対リンクと
+// /lessons/x のサイト絶対リンクは、どちらもローカルパスではない）。
+const LOCAL_LINK_RE = /\[[^\]]*\]\((?!https?:|mailto:|#|\/)([^)#\s]+)(?:#[^)\s]*)?\)/g
 
 export function findCdnPins(html) {
   return [...html.matchAll(CDN_RE)].map(m => ({pkg: m[1], version: m[2]}))
@@ -669,8 +700,8 @@ export function findLocalLinks(markdown) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test scripts/`
-Expected: PASS — 合計 29 tests pass。
+Run: `node --test "scripts/**/*.test.mjs"`
+Expected: PASS — 合計 33 tests pass。
 
 - [ ] **Step 5: lint CLI を書く**
 
@@ -766,13 +797,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
 ```json
   "scripts": {
-    "test": "node --test scripts/",
+    "test": "node --test \"scripts/**/*.test.mjs\"",
     "lint": "node scripts/lint.mjs",
     "build": "node scripts/build.mjs",
     "serve": "node scripts/serve.mjs",
     "build:webpack": "webpack --config config/webpack.config.js"
   },
 ```
+
+`node --test scripts/` と書いてはならない。**Node v22 はディレクトリ引数を走査せず、`scripts` をテストファイルとして実行しようとして失敗する。** グロブは Node 自身が展開するため、シェルに解釈させないようクォートする。
 
 - [ ] **Step 7: lint が現状を正しく落とすことを確認する**
 
@@ -852,7 +885,7 @@ test('レッスンが空でも壊れない', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test scripts/`
+Run: `node --test "scripts/**/*.test.mjs"`
 Expected: FAIL — `./build.mjs` が見つからない。
 
 - [ ] **Step 3: Write minimal implementation**
@@ -938,8 +971,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test scripts/`
-Expected: PASS — 合計 35 tests pass。
+Run: `node --test "scripts/**/*.test.mjs"`
+Expected: PASS — 合計 39 tests pass。
 
 - [ ] **Step 5: ビルドが空の状態で成功することを確認する**
 
@@ -1026,7 +1059,7 @@ test('未知の拡張子は octet-stream にする', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test scripts/`
+Run: `node --test "scripts/**/*.test.mjs"`
 Expected: FAIL — `./serve.mjs` が見つからない。
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1116,8 +1149,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test scripts/`
-Expected: PASS — 合計 43 tests pass。
+Run: `node --test "scripts/**/*.test.mjs"`
+Expected: PASS — 合計 47 tests pass。
 
 - [ ] **Step 5: 実際に起動して確認する**
 
