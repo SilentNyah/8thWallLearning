@@ -2,6 +2,9 @@
   "name": "@8thwall/editor-build",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "webpack --config config/webpack.config.js",
     "serve": "webpack-dev-server --mode=development --config config/webpack.config.js"
