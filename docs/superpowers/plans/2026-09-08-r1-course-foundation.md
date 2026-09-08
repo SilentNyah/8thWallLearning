@@ -40,7 +40,9 @@
 
    一度はグロブ形式 `node --test "scripts/**/*.test.mjs"` を採ったが、**これも誤りだった**。Node はテストランナーの引数解釈をメジャーバージョン間で変えており、v22 は引数を glob として扱う一方、**v20 は glob を展開しない**。CI は Node 20 で走るため、グロブ形式では今度は CI 側だけが壊れる。引数なしの `node --test` だけが v18 / v20 / v22 で同じ意味を持つ。プラン内の実行手順もすべて `npm test` に統一し、実際のコマンドは `package.json` の 1 箇所だけが持つ形にした。
 
-7. **QR コード生成を R5 へ繰り延べる。** 設計 第10節の「QR をビルド時に生成」は公開導線（L13）の要件であり、R1 の読者は Chrome のポートフォワーディング経由で `localhost` を開くため QR を必要としない。R1 では `8th.io` を使わないことで制約は満たされる。
+7. **Task 5 の `shared/` コピーの握り潰しをやめ、`build()` に結合テストを追加（レビューで発見した欠陥）。** 元のコードは `.catch(() => {})` で**あらゆる失敗を無視**していたため、権限エラーや容量不足で不完全な `dist` を出しても「✓ build: 成功」と表示された。`ENOENT`（`shared/` 未作成）だけを正常扱いにし、それ以外は投げる。あわせて、レッスンをコピーするループが**手元検証では一度も実行されない**（実 manifest が全レッスン draft のため）ことが判明したため、一時ディレクトリを使った結合テストを追加し、published のみが写ること・draft が写らないこと・`external/` が写ること・索引に published だけが並ぶことを実際に確認する。
+
+8. **QR コード生成を R5 へ繰り延べる。** 設計 第10節の「QR をビルド時に生成」は公開導線（L13）の要件であり、R1 の読者は Chrome のポートフォワーディング経由で `localhost` を開くため QR を必要としない。R1 では `8th.io` を使わないことで制約は満たされる。
 
 ---
 
@@ -888,7 +890,58 @@ test('タイトルに含まれる HTML 特殊文字をエスケープする', ()
 test('レッスンが空でも壊れない', () => {
   assert.match(renderIndex([]), /<html lang="ja">/)
 })
+
+// build() 本体の結合テスト。
+// レッスンをコピーするループは公開サイトを組み立てる中核だが、
+// 実際の manifest は全レッスンが draft のため手元検証では一度も通らない。
+// 一時ディレクトリに最小構成を作って、ここで実際に走らせる。
+test('build は published レッスンだけを dist へ写す', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), '8thwall-build-'))
+  try {
+    await mkdir(path.join(root, 'lessons', '01-first-ar'), {recursive: true})
+    await writeFile(path.join(root, 'lessons', '01-first-ar', 'index.html'), 'LESSON ONE')
+    await mkdir(path.join(root, 'lessons', '02-coordinates'), {recursive: true})
+    await writeFile(path.join(root, 'lessons', '02-coordinates', 'index.html'), 'LESSON TWO')
+    await mkdir(path.join(root, 'external', 'scripts'), {recursive: true})
+    await writeFile(path.join(root, 'external', 'scripts', '8frame.js'), 'AFRAME')
+    await writeFile(path.join(root, 'lessons', 'manifest.json'), JSON.stringify({
+      lessons: [
+        {id: '01-first-ar', title: '最初の AR', dir: 'lessons/01-first-ar', mode: 'static', status: 'published'},
+        {id: '02-coordinates', title: '座標系', dir: 'lessons/02-coordinates', mode: 'static', status: 'draft'},
+      ],
+    }))
+
+    const out = path.join(root, 'dist')
+    await build(root, out)
+
+    // published は写る
+    assert.equal(await readFile(path.join(out, 'lessons', '01-first-ar', 'index.html'), 'utf8'), 'LESSON ONE')
+    // draft は写らない
+    await assert.rejects(readFile(path.join(out, 'lessons', '02-coordinates', 'index.html')))
+    // external は写る（これが無いと全レッスンでスクリプトが 404 になる）
+    assert.equal(await readFile(path.join(out, 'external', 'scripts', '8frame.js'), 'utf8'), 'AFRAME')
+    // 索引には published だけが並ぶ
+    const index = await readFile(path.join(out, 'index.html'), 'utf8')
+    assert.match(index, /01-first-ar/)
+    assert.doesNotMatch(index, /02-coordinates/)
+  } finally {
+    await rm(root, {recursive: true, force: true})
+  }
+})
 ```
+
+テストファイル冒頭の import は次のとおりにする。
+
+```js
+import {test} from 'node:test'
+import assert from 'node:assert/strict'
+import {mkdtemp, mkdir, writeFile, readFile, rm} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import path from 'node:path'
+import {renderIndex, build} from './build.mjs'
+```
+
+この結合テストは `build()` が `console.log` で 1 行出力するため、テスト出力にビルドの成功行が混ざる。**これは警告ではなくビルド自身の出力であり、許容する。**
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -962,9 +1015,13 @@ export async function build(root, outDir) {
   await cp(path.join(root, 'external'), path.join(outDir, 'external'), {recursive: true})
 
   const sharedDir = path.join(root, 'shared')
-  await cp(sharedDir, path.join(outDir, 'shared'), {recursive: true, force: true}).catch(() => {
-    // shared/ がまだ無い段階では何もしない
-  })
+  try {
+    await cp(sharedDir, path.join(outDir, 'shared'), {recursive: true, force: true})
+  } catch (error) {
+    // shared/ がまだ無い段階は正常。それ以外の失敗（権限、容量など）は握り潰さない。
+    // 握り潰すと、不完全な dist を出したまま「成功」と表示してしまう。
+    if (error.code !== 'ENOENT') throw error
+  }
 
   await writeFile(path.join(outDir, 'index.html'), renderIndex(lessons), 'utf8')
   console.log(`✓ build: ${lessons.length} 件のレッスンを ${outDir} に出力しました`)
@@ -979,7 +1036,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test`
-Expected: PASS — 合計 39 tests pass。
+Expected: PASS — 合計 40 tests pass。
 
 - [ ] **Step 5: ビルドが空の状態で成功することを確認する**
 
@@ -1157,7 +1214,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test`
-Expected: PASS — 合計 47 tests pass。
+Expected: PASS — 合計 48 tests pass。
 
 - [ ] **Step 5: 実際に起動して確認する**
 
