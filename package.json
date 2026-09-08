@@ -6,8 +6,11 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "webpack --config config/webpack.config.js",
-    "serve": "webpack-dev-server --mode=development --config config/webpack.config.js"
+    "test": "node --test scripts/",
+    "lint": "node scripts/lint.mjs",
+    "build": "node scripts/build.mjs",
+    "serve": "node scripts/serve.mjs",
+    "build:webpack": "webpack --config config/webpack.config.js"
   },
   "devDependencies": {
     "@babel/parser": "^7.23.9",
