@@ -44,7 +44,11 @@
 
 8. **`deploy.yml` でもテストと lint を実行する（レビューで発見した欠陥）。** 当初の deploy ワークフローは `npm run build` しか実行せず、`ci.yml` の成否とも connected していなかった。GitHub Actions は別ファイルのワークフローを自動連結しないため、このままでは **lint に落ちるレッスンがそのまま GitHub Pages へ公開される**経路が開く。`npm run build` は見出し欠落・浮動バージョン・リンク切れを検出しないので、ビルド成功は品質の保証にならない。本コースの品質保証はリンタ 1 本に集約されている以上、公開経路がそれを迂回してはならない。
 
-9. **QR コード生成を R5 へ繰り延べる。** 設計 第10節の「QR をビルド時に生成」は公開導線（L13）の要件であり、R1 の読者は Chrome のポートフォワーディング経由で `localhost` を開くため QR を必要としない。R1 では `8th.io` を使わないことで制約は満たされる。
+9. **`serve.mjs` は末尾スラッシュ無しのディレクトリ要求を 301 でリダイレクトする（実機検証中に利用者が踏んだ欠陥）。** 当初の実装は `resolveSafePath` が末尾スラッシュのときだけ `index.html` を補い、ハンドラはディレクトリを一律 404 に変換していた。そのため `http://localhost:8080/lessons/01-first-ar` は 404 になり、`.../01-first-ar/` だけが動く。**読者は必ず末尾スラッシュを省いて入力する**（実際、実機検証の最初の操作でこれが起きた）。加えて、ページ内の相対パスはスラッシュの有無で解決先が変わるため、index.html をそのまま返すのではなくリダイレクトするのが正しい。
+
+   **この欠陥が 8 本のテストとレビューをすり抜けた理由**も記録しておく。テストは `resolveSafePath` と `contentTypeFor` という純粋関数しか見ておらず、**サーバを実際に起動して「普通に開いたら動くか」を確かめるテストが 1 本も無かった**。走査防止の検証は入念に行われたが、正常系が空白だった。あわせて起動をともなう結合テストを 1 本追加する。
+
+10. **QR コード生成を R5 へ繰り延べる。** 設計 第10節の「QR をビルド時に生成」は公開導線（L13）の要件であり、R1 の読者は Chrome のポートフォワーディング経由で `localhost` を開くため QR を必要としない。R1 では `8th.io` を使わないことで制約は満たされる。
 
 ---
 
@@ -1121,7 +1125,54 @@ test('拡張子から Content-Type を決める', () => {
 test('未知の拡張子は octet-stream にする', () => {
   assert.equal(contentTypeFor('a.unknown'), 'application/octet-stream')
 })
+
+// 実際にサーバを起動して確かめる唯一のテスト。
+// 上の 8 本は純粋関数しか見ていないため、「普通に開いたら動くか」を
+// 誰も検証していなかった。読者は必ず末尾スラッシュを省いて入力する。
+test('ディレクトリを末尾スラッシュ無しで指すとスラッシュ付きへ誘導する', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), '8thwall-serve-'))
+  try {
+    await mkdir(path.join(root, 'lessons', '01-first-ar'), {recursive: true})
+    await writeFile(path.join(root, 'lessons', '01-first-ar', 'index.html'), '<h1>OK</h1>')
+
+    // ポート 0 は OS に空きポートを選ばせる。固定ポートだと利用者の
+    // 開発サーバと衝突する。
+    const server = startServer(root, 0)
+    await once(server, 'listening')
+    const {port} = server.address()
+
+    try {
+      const redirect = await fetch(`http://127.0.0.1:${port}/lessons/01-first-ar`, {redirect: 'manual'})
+      assert.equal(redirect.status, 301)
+      assert.equal(redirect.headers.get('location'), '/lessons/01-first-ar/')
+
+      // リダイレクトを追えば実際に中身が返る
+      const followed = await fetch(`http://127.0.0.1:${port}/lessons/01-first-ar`)
+      assert.equal(followed.status, 200)
+      assert.match(await followed.text(), /OK/)
+    } finally {
+      server.close()
+      await once(server, 'close')
+    }
+  } finally {
+    await rm(root, {recursive: true, force: true})
+  }
+})
 ```
+
+テストファイル冒頭の import は次のとおりにする。
+
+```js
+import {test} from 'node:test'
+import assert from 'node:assert/strict'
+import {mkdtemp, mkdir, writeFile, rm} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {once} from 'node:events'
+import path from 'node:path'
+import {resolveSafePath, contentTypeFor, startServer} from './serve.mjs'
+```
+
+**`finally` でサーバを必ず閉じること。** このプランの実行中に、サーバを起動したまま報告した実装があり、利用者のマシンにプロセスが残った。テストも例外ではない。
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1191,7 +1242,15 @@ export function startServer(root, port) {
     }
     try {
       const info = await stat(filePath)
-      if (info.isDirectory()) throw new Error('directory')
+      if (info.isDirectory()) {
+        // 末尾スラッシュ無しでディレクトリを指された場合は、スラッシュ付きへ誘導する。
+        // ここで 404 を返すと、読者が /lessons/01-first-ar と打った瞬間に詰まる。
+        // ページ内の相対パスもスラッシュの有無で解決先が変わるため、リダイレクトが正しい。
+        const [pathname, query = ''] = req.url.split('?')
+        res.writeHead(301, {location: pathname + '/' + (query && '?' + query)})
+        res.end()
+        return
+      }
       res.writeHead(200, {'content-type': contentTypeFor(filePath)})
       createReadStream(filePath).pipe(res)
     } catch {
@@ -1216,7 +1275,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test`
-Expected: PASS — 合計 48 tests pass。
+Expected: PASS — 合計 49 tests pass。
 
 - [ ] **Step 5: 実際に起動して確認する**
 
