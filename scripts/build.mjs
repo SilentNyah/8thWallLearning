@@ -60,9 +60,13 @@ export async function build(root, outDir) {
   await cp(path.join(root, 'external'), path.join(outDir, 'external'), {recursive: true})
 
   const sharedDir = path.join(root, 'shared')
-  await cp(sharedDir, path.join(outDir, 'shared'), {recursive: true, force: true}).catch(() => {
-    // shared/ がまだ無い段階では何もしない
-  })
+  try {
+    await cp(sharedDir, path.join(outDir, 'shared'), {recursive: true, force: true})
+  } catch (error) {
+    // shared/ がまだ無い段階は正常。それ以外の失敗（権限、容量など）は握り潰さない。
+    // 握り潰すと、不完全な dist を出したまま「成功」と表示してしまう。
+    if (error.code !== 'ENOENT') throw error
+  }
 
   await writeFile(path.join(outDir, 'index.html'), renderIndex(lessons), 'utf8')
   console.log(`✓ build: ${lessons.length} 件のレッスンを ${outDir} に出力しました`)
