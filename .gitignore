@@ -2,3 +2,7 @@ node_modules
 dist
 tmp
 .DS_Store
+
+# 作業用ディレクトリ（リポジトリには含めない）
+.claude/worktrees/
+.superpowers/
