@@ -19,14 +19,22 @@ const ALLOWED_CDN_HOST = 'cdn.jsdelivr.net'
 // pkg はスコープ付き（@scope/name）とスコープ無しの両方がある。
 const JSDELIVR_NPM_RE = /^\/npm\/((?:@[^@/]+\/)?[^@/]+)(?:@([^/]+))?(?:\/|$)/
 
+// プロトコル相対（//host/path）も拾う。素通りさせると、
+// バージョンを省いた URL がスキームを省くだけで検査を逃れる。
 const externalAssetUrls = html => [...html.matchAll(ASSET_URL_RE)]
   .map(m => m[1])
-  .filter(url => /^https?:\/\//i.test(url))
+  .filter(url => /^(?:https?:)?\/\//i.test(url))
 
 // URL を 1 本ずつ調べて、ピンとエラーを返す。
 // 「抽出」と「妥当性判定」は別の関心事なので、両方返しうる形にする。
 // 例えば @1 は厳密ではないためエラーになるが、ピンとしては存在する。
 const inspect = url => {
+  // プロトコル相対はここで弾く。new URL に渡すと基準 URL が要る上、
+  // 補った基準のスキームで判定してしまい http/https の検査が意味を失う。
+  if (url.startsWith('//')) {
+    return {error: `プロトコル相対 URL は使えません: "${url}"（https: から明示的に書く）`}
+  }
+
   let parsed
   try {
     parsed = new URL(url)

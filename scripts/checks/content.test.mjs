@@ -117,3 +117,13 @@ test('本文中の a href は CDN 検査の対象にしない', () => {
 test('ローカルの script src は CDN 検査の対象にしない', () => {
   assert.deepEqual(checkExactVersions(tag('../../external/scripts/8frame-1.5.0.min.js')), [])
 })
+
+test('プロトコル相対 URL をエラーにする', () => {
+  const errors = checkExactVersions(tag('//cdn.jsdelivr.net/npm/@8thwall/xrextras/dist/xrextras.js'))
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /プロトコル相対/)
+})
+
+test('プロトコル相対 URL はピンとして拾わない', () => {
+  assert.deepEqual(findCdnPins(tag('//cdn.jsdelivr.net/npm/@8thwall/xrextras@1.0.0/dist/xrextras.js')), [])
+})
