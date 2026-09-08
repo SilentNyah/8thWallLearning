@@ -1,10 +1,15 @@
 // 本文とマークアップの内容チェック。
 // 「バージョンを厳密固定する」という方針を、人間の記憶ではなく機械に守らせる。
 
-const CDN_RE = /https:\/\/cdn\.jsdelivr\.net\/npm\/(@[^@/]+\/[^@/]+|[^@/]+)@([^/"']+)\//g
+// バージョンの後ろにパスが続かない URL（例: .../xrextras@1）も拾う必要がある。
+// 末尾の / を必須にすると、同じ浮動バージョンがパスの有無だけで
+// 検出されたりされなかったりする穴が空く。
+const CDN_RE = /https:\/\/cdn\.jsdelivr\.net\/npm\/(@[^@/]+\/[^@/]+|[^@/]+)@([^/"'\s>]+)/g
 const EXACT_SEMVER = /^\d+\.\d+\.\d+$/
-// 外部スキームとページ内アンカーを除いたマークダウンリンク
-const LOCAL_LINK_RE = /\[[^\]]*\]\((?!https?:|mailto:|#)([^)#\s]+)(?:#[^)\s]*)?\)/g
+// 外部スキームとページ内アンカーを除いたマークダウンリンク。
+// 先頭の / も除外する（//example.com のプロトコル相対リンクと
+// /lessons/x のサイト絶対リンクは、どちらもローカルパスではない）。
+const LOCAL_LINK_RE = /\[[^\]]*\]\((?!https?:|mailto:|#|\/)([^)#\s]+)(?:#[^)\s]*)?\)/g
 
 export function findCdnPins(html) {
   return [...html.matchAll(CDN_RE)].map(m => ({pkg: m[1], version: m[2]}))

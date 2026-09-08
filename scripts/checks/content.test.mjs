@@ -62,3 +62,23 @@ test('外部リンクとアンカーは抽出しない', () => {
 test('相対リンクのアンカー部分を取り除く', () => {
   assert.deepEqual(findLocalLinks('[節へ](./README.md#解説)'), ['./README.md'])
 })
+
+// バージョンの後ろにパスが続かない URL は jsdelivr の正当な短縮形であり、
+// ここを取りこぼすと「浮動バージョン禁止」の保証に穴が空く
+const bareTag = '<script src="https://cdn.jsdelivr.net/npm/@8thwall/xrextras@1"></script>'
+
+test('パス無しの CDN URL からもバージョンを抽出する', () => {
+  assert.deepEqual(findCdnPins(bareTag), [{pkg: '@8thwall/xrextras', version: '1'}])
+})
+
+test('パス無しの浮動バージョンもエラーにする', () => {
+  assert.equal(checkExactVersions(bareTag).length, 1)
+})
+
+test('プロトコル相対リンクはローカルリンクとして扱わない', () => {
+  assert.deepEqual(findLocalLinks('[a](//example.com/script.js)'), [])
+})
+
+test('サイト絶対リンクはローカルリンクとして扱わない', () => {
+  assert.deepEqual(findLocalLinks('[b](/lessons/00-about/README.md)'), [])
+})
