@@ -56,7 +56,15 @@ export function startServer(root, port) {
     }
     try {
       const info = await stat(filePath)
-      if (info.isDirectory()) throw new Error('directory')
+      if (info.isDirectory()) {
+        // 末尾スラッシュ無しでディレクトリを指された場合は、スラッシュ付きへ誘導する。
+        // ここで 404 を返すと、読者が /lessons/01-first-ar と打った瞬間に詰まる。
+        // ページ内の相対パスもスラッシュの有無で解決先が変わるため、リダイレクトが正しい。
+        const [pathname, query = ''] = req.url.split('?')
+        res.writeHead(301, {location: pathname + '/' + (query && '?' + query)})
+        res.end()
+        return
+      }
       res.writeHead(200, {'content-type': contentTypeFor(filePath)})
       createReadStream(filePath).pipe(res)
     } catch {
