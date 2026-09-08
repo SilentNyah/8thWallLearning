@@ -30,7 +30,9 @@
 
    **付随する決定:** `src/assets/cactus.glb` は `0d87a0c` に含まれるため、**既に公開履歴に載っている**。履歴の書き換えは行わない（利用者判断で確定済み）。理由は、同じファイルを 8th Wall 自身が MIT ライセンスの公開サンプルリポジトリで配布しており当方が露出源ではないこと、push 済みリポジトリを書き換えても GitHub 側の到達不能オブジェクトと LFS ストレージからの完全削除は保証されないこと、force-push が既存クローンを壊す破壊的操作であることの 3 点による。**作業ツリーからは除外し、以降のレッスンで一切使用しない。**
 2. **webpack のマルチエントリ化を R2 へ繰り延べる。** 設計 第12節はステップ 5 に置いていたが、R1 のレッスンは全て `mode: static` であり、bundled レッスンがゼロの状態でマルチエントリ機構を作っても検証できない。R1 は `scripts/build.mjs` による静的ビルドのみとし、R2 で同じ `manifest.json` を webpack から読ませる形に拡張する。**作ったものは捨てない。**
-3. **QR コード生成を R5 へ繰り延べる。** 設計 第10節の「QR をビルド時に生成」は公開導線（L13）の要件であり、R1 の読者は Chrome のポートフォワーディング経由で `localhost` を開くため QR を必要としない。R1 では `8th.io` を使わないことで制約は満たされる。
+3. **Task 5 の `build()` は `external/` も `dist/` へコピーする（実行前スキャンで発見した欠陥の修正）。** 当初の Task 5 は公開レッスンと `shared/` しかコピーしていなかったが、全レッスンは 8frame を `../../external/scripts/8frame-1.5.0.min.js` から読み込むため、`dist` 配信時に**全レッスンでスクリプトが 404 になる**。Step 3 のコードに `external/` のコピーを追加し、Step 5 の検証項目にも `dist/external/scripts/8frame-1.5.0.min.js` の存在確認を加えた。
+
+4. **QR コード生成を R5 へ繰り延べる。** 設計 第10節の「QR をビルド時に生成」は公開導線（L13）の要件であり、R1 の読者は Chrome のポートフォワーディング経由で `localhost` を開くため QR を必要としない。R1 では `8th.io` を使わないことで制約は満たされる。
 
 ---
 
@@ -910,6 +912,10 @@ export async function build(root, outDir) {
     await cp(path.join(root, lesson.dir), path.join(outDir, lesson.dir), {recursive: true})
   }
 
+  // レッスンは 8frame を ../../external/scripts/ から読み込むため、external/ も dist へ写す。
+  // これが無いと dist 配信時に全レッスンでスクリプトが 404 になる。
+  await cp(path.join(root, 'external'), path.join(outDir, 'external'), {recursive: true})
+
   const sharedDir = path.join(root, 'shared')
   await cp(sharedDir, path.join(outDir, 'shared'), {recursive: true, force: true}).catch(() => {
     // shared/ がまだ無い段階では何もしない
@@ -933,7 +939,12 @@ Expected: PASS — 合計 35 tests pass。
 - [ ] **Step 5: ビルドが空の状態で成功することを確認する**
 
 Run: `npm run build`
-Expected: `✓ build: 0 件のレッスンを ... に出力しました`（全レッスンが `draft` のため 0 件で正しい）。`dist/index.html` が生成されていること。
+Expected: `✓ build: 0 件のレッスンを ... に出力しました`（全レッスンが `draft` のため 0 件で正しい）。
+
+さらに次の 2 点を確認する。
+
+- `dist/index.html` が生成されていること
+- **`dist/external/scripts/8frame-1.5.0.min.js` が存在すること** — レッスンはここから A-Frame を読み込むため、欠けていると公開後に全レッスンが動かない
 
 - [ ] **Step 6: Commit**
 
