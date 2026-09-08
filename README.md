@@ -1,61 +1,44 @@
-# A-Frame: World Effects
+# 8th Wall で作る WebAR 入門（作成中）
 
-This example allows the user to grow cacti 🌵  by tapping or clicking the ground. Showcases raycasting,
-spawning new objects, and importing a 3D model.
+8th Wall を使った WebAR の日本語学習コースです。**現在 R1（第 0〜1 章）を作成中で、レッスン本文はまだ公開されていません。**
 
-![Cacti sprouting from the ground, in augmented reality, desktop 3D, and virtual reality](./src/assets/preview.gif)
+## いまある状態
 
-<details><summary>Try it out</summary>
+8th Wall の A-Frame サンプルを土台に、日本語の学習コースへ作り替えている途中です。この時点で揃っているのは、コースを支える基盤部分だけです。
 
-https://8thwall.org/aframe-world-effects-example/
+- レッスン定義（`lessons/manifest.json`）を単一の真実とする仕組み
+- 様式チェック（必須見出し、検証フッター、CDN のバージョン固定、リンク切れ）
+- 静的ビルドと索引ページの生成
+- 依存を増やさない手元確認用サーバ
+- CI と GitHub Pages への自動公開
 
-<img alt="QR Code for the preview link" src="https://8th.io/qr?v=2&url=https://8thwall.org/aframe-world-effects-example/" width=250 height=250 />
+設計と実装計画は `docs/superpowers/` にあります。
 
-</details>
+## 対象読者
 
-## Usage
+Web 開発の経験はあるが、3D は初めてという方を想定しています。
 
-1. On this repository, click **Code** > **Download ZIP**. If you clone the repository instead, make sure you have Git LFS installed and run `git lfs pull`
-2. Unzip the folder to the location you'd like to work in
-3. `npm install`
-4. `npm run serve`
-5. To connect to a mobile device, follow [these instructions](https://8th.io/test-on-mobile)
-6. Recommended: Track your files using [git](https://git-scm.com/about) to avoid losing progress
+## 検証環境
 
-## Deployment
+**Android Chrome と PC で検証しています。iOS は未検証であり、動作を保証しません。**
 
-This project contains Github Actions configuration for deployment to Github Pages, which triggers automatically by pushing the `main` branch. You can also create a production build using `npm run build`, which outputs the production build to the `dist` folder, and publish to the web using [this guide](https://8thwall.org/docs/getting-started/publishing#self-hosting-your-project).
+## ライセンス
 
-## Questions?
+| 対象 | ライセンス |
+|---|---|
+| コース本文 | CC BY 4.0 |
+| サンプルコード | MIT（8th Wall, Inc. および Niantic Spatial, Inc. の表記を保持） |
+| 8th Wall XR Engine | 無償だが商用利用に制限あり |
 
-Please raise any questions on [Github Discussions](https://github.com/orgs/8thwall/discussions) or join the [Discord](https://8th.io/discord) to connect with the community.
+## 開発
 
----
+Node.js 20 以上が必要です。**依存パッケージのインストールは不要**です（Node 標準機能のみで動作します）。
 
-### Optimizing for Metaversal Deployment
+```
+npm test        # テスト
+npm run lint    # 様式チェック
+npm run build   # dist/ を生成
+npm run serve   # 手元で確認
+```
 
-With R18, the all-new 8th Wall Engine features Metaversal Deployment, enabling you to create WebAR experiences once and deploy them to smartphones, tablets, computers and both AR and VR headsets. This project has a few platform-specific customizations:
-
-In **body.html**, we add the ```"allowedDevices: any"``` parameter to our ```xrweb``` component in ```<a-scene>``` 
-which ensures the project opens on all platforms, including desktop. Environment parameters 
-have been customized to generate an open desert space.
-
----
-
-### About World Tracking
-
-Built entirely using standards-compliant JavaScript and WebGL, 8th Wall’s Simultaneous Localization 
-and Mapping (SLAM) engine is hyper-optimized for real-time AR on mobile browsers. Features include
-Six Degrees of Freedom (6-DoF), Lighting estimation, instant surface detection and responsive scale.
-
-The Y position of the camera at start effectively determines the scale of virtual content on a surface 
-(e.g. smaller y, bigger content). This can be reset at any time by calling 
-[```recenter()```](https://www.8thwall.com/docs/web/#recenter).
-
-The camera should NOT be at a height (Y) of zero. It must be set to a non-zero value.
-
----
-
-#### Attribution
-
-Toon Cactus by [PolyChromic](https://skfb.ly/6Xvws)
+`npm run lint` は現在エラーで終了します。レッスン本文が未執筆であることを正しく報告している状態です。

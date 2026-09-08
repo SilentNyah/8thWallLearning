@@ -33,34 +33,46 @@ export async function lint(root) {
   for (const lesson of manifest.lessons) {
     const dir = path.join(root, lesson.dir)
     const readmePath = path.join(dir, 'README.md')
+    const htmlPath = path.join(dir, 'index.html')
 
-    if (!(await exists(readmePath))) {
+    // R1 のビルドは bundled を扱えない。linkFor が static と同じ扱いをするため、
+    // 気づかないまま壊れた dist が出る。R2 で実装するまでは明示的に拒否する。
+    if (lesson.mode === 'bundled') {
+      errors.push(`${lesson.id}: mode "bundled" は R1 では未対応です`)
+    }
+
+    if (await exists(readmePath)) {
+      const markdown = await readFile(readmePath, 'utf8')
+      const label = `${lesson.id}/README.md`
+
+      errors.push(...checkHeadings(markdown, lesson.mode).map(e => `${label}: ${e}`))
+      errors.push(...checkFooter(markdown, lesson.mode).map(e => `${label}: ${e}`))
+
+      for (const link of findLocalLinks(markdown)) {
+        if (!(await exists(path.resolve(dir, link)))) {
+          errors.push(`${label}: リンク切れ "${link}"`)
+        }
+      }
+
+      // README に載せたコードも検査する。読者が実際にコピーするのはこちらであり、
+      // ここが緩いと index.html だけ正しくても意味がない。
+      errors.push(...checkExactVersions(markdown).map(e => `${label}: ${e}`))
+      filesWithPins.push({file: label, pins: findCdnPins(markdown)})
+    } else {
+      // README が無くても HTML の検査は続ける。
+      // ここで continue すると、書きかけのレッスンが完全な無検査になる。
       errors.push(`${lesson.id}: README.md がありません`)
-      continue
     }
 
-    const markdown = await readFile(readmePath, 'utf8')
-    const label = `${lesson.id}/README.md`
-
-    errors.push(...checkHeadings(markdown, lesson.mode).map(e => `${label}: ${e}`))
-    errors.push(...checkFooter(markdown, lesson.mode).map(e => `${label}: ${e}`))
-
-    for (const link of findLocalLinks(markdown)) {
-      if (!(await exists(path.resolve(dir, link)))) {
-        errors.push(`${label}: リンク切れ "${link}"`)
+    if (lesson.mode !== 'prose') {
+      if (await exists(htmlPath)) {
+        const html = await readFile(htmlPath, 'utf8')
+        const label = `${lesson.id}/index.html`
+        errors.push(...checkExactVersions(html).map(e => `${label}: ${e}`))
+        filesWithPins.push({file: label, pins: findCdnPins(html)})
+      } else {
+        errors.push(`${lesson.id}: mode が ${lesson.mode} ですが index.html がありません`)
       }
-    }
-
-    if (lesson.mode === 'static') {
-      const htmlPath = path.join(dir, 'index.html')
-      if (!(await exists(htmlPath))) {
-        errors.push(`${lesson.id}: mode が static ですが index.html がありません`)
-        continue
-      }
-      const html = await readFile(htmlPath, 'utf8')
-      const htmlLabel = `${lesson.id}/index.html`
-      errors.push(...checkExactVersions(html).map(e => `${htmlLabel}: ${e}`))
-      filesWithPins.push({file: htmlLabel, pins: findCdnPins(html)})
     }
   }
 

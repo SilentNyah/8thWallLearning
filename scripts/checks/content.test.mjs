@@ -82,3 +82,38 @@ test('プロトコル相対リンクはローカルリンクとして扱わな�
 test('サイト絶対リンクはローカルリンクとして扱わない', () => {
   assert.deepEqual(findLocalLinks('[b](/lessons/00-about/README.md)'), [])
 })
+
+// レビューで実証された素通りパターン。5 種類の違反を仕込んだツリーで
+// lint がエラー 0 件を返したため、1 つずつ固定する。
+const tag = url => `<script src="${url}"></script>`
+
+test('バージョンを省略した jsdelivr URL をエラーにする', () => {
+  const errors = checkExactVersions(tag('https://cdn.jsdelivr.net/npm/@8thwall/xrextras/dist/xrextras.js'))
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /バージョンが指定されていません/)
+})
+
+test('jsdelivr 以外の CDN をエラーにする', () => {
+  const errors = checkExactVersions(tag('https://unpkg.com/@8thwall/xrextras@1.0.0/dist/xrextras.js'))
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /unpkg\.com/)
+})
+
+test('jsdelivr の gh パスをエラーにする', () => {
+  const errors = checkExactVersions(tag('https://cdn.jsdelivr.net/gh/aframevr/aframe@master/dist/aframe.js'))
+  assert.equal(errors.length, 1)
+})
+
+test('http の CDN URL をエラーにする', () => {
+  const errors = checkExactVersions(tag('http://cdn.jsdelivr.net/npm/@8thwall/xrextras@1.0.0/dist/xrextras.js'))
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /https/)
+})
+
+test('本文中の a href は CDN 検査の対象にしない', () => {
+  assert.deepEqual(checkExactVersions('<a href="https://example.com/docs">説明</a>'), [])
+})
+
+test('ローカルの script src は CDN 検査の対象にしない', () => {
+  assert.deepEqual(checkExactVersions(tag('../../external/scripts/8frame-1.5.0.min.js')), [])
+})

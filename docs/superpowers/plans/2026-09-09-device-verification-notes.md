@@ -21,7 +21,7 @@ jsdelivr 上に実体が存在することも確認済み。`xrextras@1.0.0/dist
 
 ### 何が起きたか
 
-`chrome://inspect/#devices` は端末をシリアル番号付きで検出した（`Offline #R9TY600FV0F`）。つまり **USB のデータ通信自体は成立しており、ケーブルの問題ではない**。しかし表示は最後まで次のままだった。
+`chrome://inspect/#devices` は端末をシリアル番号付きで検出した（`Offline #XXXXXXXXXXX`）。つまり **USB のデータ通信自体は成立しており、ケーブルの問題ではない**。しかし表示は最後まで次のままだった。
 
 ```
 Pending authentication: please accept debugging session on the device.

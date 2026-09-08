@@ -4,7 +4,7 @@
 import {cp, mkdir, rm, writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {fileURLToPath} from 'node:url'
-import {loadManifest, publishedLessons} from './manifest.mjs'
+import {loadManifest, validateManifest, publishedLessons} from './manifest.mjs'
 
 const escapeHtml = text => text
   .replace(/&/g, '&amp;')
@@ -46,6 +46,14 @@ ${items}
 
 export async function build(root, outDir) {
   const manifest = await loadManifest(root)
+
+  // ビルドは lesson.dir を cp の宛先にする。検証せずに使うと、
+  // 手で壊した manifest が予期しない場所へ書き込む。
+  const problems = validateManifest(manifest)
+  if (problems.length > 0) {
+    throw new Error(`manifest が不正です:\n${problems.map(p => `  ${p}`).join('\n')}`)
+  }
+
   const lessons = publishedLessons(manifest)
 
   await rm(outDir, {recursive: true, force: true})

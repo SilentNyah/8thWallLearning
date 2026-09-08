@@ -65,5 +65,11 @@ export function publishedLessons(manifest) {
 
 export async function loadManifest(root) {
   const file = path.join(root, 'lessons', 'manifest.json')
-  return JSON.parse(await readFile(file, 'utf8'))
+  const raw = await readFile(file, 'utf8')
+  try {
+    return JSON.parse(raw)
+  } catch (error) {
+    // 最も編集されるファイルなので、どこが壊れたか分かる形で投げ直す
+    throw new Error(`lessons/manifest.json の JSON が不正です: ${error.message}`)
+  }
 }
